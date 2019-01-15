@@ -95,7 +95,7 @@ class GCCExecutor(CompiledExecutor):
 
     @classmethod
     def get_version_flags(cls, command):
-        return ['-dumpversion']
+        return ['--version']
 
     @classmethod
     def autoconfig_run_test(cls, result):
