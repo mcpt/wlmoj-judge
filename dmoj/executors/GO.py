@@ -12,6 +12,7 @@ class Executor(CompiledExecutor):
     ext = '.go'
     name = 'GO'
     address_grace = 786432
+    syscalls = ['pselect6']
     command = 'go'
     test_name = 'echo'
     test_program = '''\
