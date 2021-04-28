@@ -28,8 +28,8 @@ class TestManager:
         self.failed = False
         self.codes_all = codes_all
         self.codes_cases = codes_cases
-        self.points_all = points_all
-        self.points_cases = points_cases
+        self.score_all = score_all
+        self.score_cases = score_cases
         self.feedback_all = feedback_all
         self.feedback_cases = feedback_cases
         self.extended_feedback_all = extended_feedback_all
@@ -52,15 +52,15 @@ class TestManager:
         elif code not in self.codes_all:
             self.fail('Unexpected global code: %s, expecting %s' % (code, ', '.join(self.codes_all)))
 
-        if position in self.points_cases:
-            if result.points not in self.points_cases[position]:
+        if position in self.score_cases:
+            if result.points not in self.score_cases[position]:
                 self.fail(
-                    'Unexpected points for case %d: %s, expecting %s'
-                    % (position, result.points, ', '.join(self.points_cases[position]))
+                    'Unexpected score for case %d: %s, expecting %s'
+                    % (position, result.points, ', '.join(self.score_cases[position]))
                 )
-        elif self.points_all is not None and result.points not in self.points_all:
-            self.fail('Unexpected global points: %s, expecting %s' % (
-                result.points, ', '.join(map(str, self.points_all))))
+        elif self.score_all is not None and result.points not in self.score_all:
+            self.fail('Unexpected global score: %s, expecting %s' % (
+                result.points, ', '.join(map(str, self.score_all))))
 
         feedback = self.feedback_all
         if position in self.feedback_cases:
@@ -72,10 +72,15 @@ class TestManager:
         if position in self.extended_feedback_cases:
             extended_feedback = self.extended_feedback_cases[position]
         if extended_feedback is not None and result.extended_feedback not in extended_feedback:
+<<<<<<< HEAD
             self.fail(
                 'Unexpected extended feedback: "%s", expected: "%s"'
                 % (result.extended_feedback, '", "'.join(extended_feedback))
             )
+=======
+            self.fail('Unexpected extended feedback: "%s", expected: "%s"' %
+                      (result.extended_feedback, '", "'.join(extended_feedback)))
+>>>>>>> 619e38f941b20f7f5fb1183958cea46476ef6eb0
 
     def compile_error_packet(self, log):
         if 'CE' not in self.codes_all:
@@ -142,7 +147,7 @@ class Tester:
     def test_all(self):
         total_fails = 0
 
-        for problem, _ in get_supported_problems():
+        for problem in get_supported_problems():
             if self.problem_regex is not None and not self.problem_regex.match(problem):
                 continue
             root = get_problem_root(problem)
@@ -203,9 +208,12 @@ class Tester:
                 pass
 
         if not config:
-            self.output(ansi_style('\t\t#ansi[Skipped](magenta|bold) - No usable test.yml'))
+            self.output(ansi_style('\t\t#ansi[Skipped](magenta|bold) - No usable test config'))
             return 0
 
+        return self._run_test_case(problem, case_dir, config)
+
+    def _run_test_case(self, problem, case_dir, config):
         if 'skip' in config and config['skip']:
             self.output(ansi_style('\t\t#ansi[Skipped](magenta|bold) - Unsupported on current platform'))
             return 0
@@ -227,14 +235,18 @@ class Tester:
         codes_all, codes_cases = self.parse_expect(
             config.get('expect', 'AC'), config.get('cases', {}), self.parse_expected_codes
         )
-        points_all, points_cases = self.parse_expect(
-            config.get('points'), config.get('points_cases', {}), self.parse_points
+        score_all, score_cases = self.parse_expect(
+            config.get('score'), config.get('score_cases', {}), self.parse_score
         )
         feedback_all, feedback_cases = self.parse_expect(
             config.get('feedback'), config.get('feedback_cases', {}), self.parse_feedback
         )
         extended_feedback_all, extended_feedback_cases = self.parse_expect(
+<<<<<<< HEAD
             config.get('extended_feedback'), config.get('extended_feedback_cases', {}), self.parse_extended_feedback
+=======
+            config.get('extended_feedback'), config.get('extended_feedback_cases', {}), self.parse_feedback
+>>>>>>> 619e38f941b20f7f5fb1183958cea46476ef6eb0
         )
 
         def output_case(data):
@@ -243,8 +255,15 @@ class Tester:
         fails = 0
         for source in sources:
             self.sub_id += 1
+<<<<<<< HEAD
             self.manager.set_expected(codes_all, codes_cases, points_all, points_cases, feedback_all, feedback_cases,
                                       extended_feedback_all, extended_feedback_cases)
+=======
+            self.manager.set_expected(
+                codes_all, codes_cases, score_all, score_cases, feedback_all,
+                feedback_cases, extended_feedback_all, extended_feedback_cases
+            )
+>>>>>>> 619e38f941b20f7f5fb1183958cea46476ef6eb0
             self.judge.begin_grading(
                 Submission(self.sub_id, problem, language, source, time, memory, False, {}),
                 blocking=True,
@@ -273,13 +292,13 @@ class Tester:
             assert not (result - self.all_codes)
             return result
 
-    def parse_points(self, points):
-        if points is None or points == '*':
+    def parse_score(self, score):
+        if score is None or score == '*':
             return None
-        elif isinstance(points, (str, int)):
-            return {int(points)}
+        elif isinstance(score, (str, int)):
+            return {int(score)}
         else:
-            return set(map(int, points))
+            return set(map(int, score))
 
     def parse_feedback(self, feedback):
         if feedback is None or feedback == '*':
@@ -311,7 +330,7 @@ def main():
     tester = Tester(judgeenv.problem_regex, judgeenv.case_regex)
     fails = tester.test_all()
     print()
-    print('Test complete')
+    print('Test complete.')
     if fails:
         print_ansi('#ansi[A total of %d case(s) failed](red|bold).' % fails)
     else:
