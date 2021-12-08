@@ -13,9 +13,7 @@ bool pt_debugger::supports_abi(int abi) {
     return abi == PTBOX_ABI_ARM;
 }
 
-#if PTBOX_SECCOMP
 uint32_t pt_debugger::seccomp_non_native_arch_list[] = { 0 };
-#endif
 
 int pt_debugger::abi_from_reg_size(size_t) {
     return PTBOX_ABI_ARM;
@@ -47,28 +45,28 @@ int pt_debugger::syscall(int id) {
     return 0;
 }
 
-#define MAKE_ACCESSOR(method, reg_name) \
-    long pt_debugger::method() { \
-        switch (abi_) { \
-            case PTBOX_ABI_ARM: \
-                return regs.reg_name; \
-            case PTBOX_ABI_INVALID: \
-                return -1; \
-            default: \
-                UNKNOWN_ABI("ptdebug_arm.cpp:" #method " getter"); \
-        } \
-    } \
-    \
-    void pt_debugger::method(long value) { \
-        regs_changed = true; \
-        switch (abi_) { \
-            case PTBOX_ABI_ARM: \
-                regs.reg_name = value; \
-            case PTBOX_ABI_INVALID: \
-                return; \
-            default: \
-                UNKNOWN_ABI("ptdebug_arm.cpp:" #method " setter"); \
-        } \
+#define MAKE_ACCESSOR(method, reg_name)                                                                                \
+    long pt_debugger::method() {                                                                                       \
+        switch (abi_) {                                                                                                \
+            case PTBOX_ABI_ARM:                                                                                        \
+                return regs.reg_name;                                                                                  \
+            case PTBOX_ABI_INVALID:                                                                                    \
+                return -1;                                                                                             \
+            default:                                                                                                   \
+                UNKNOWN_ABI("ptdebug_arm.cpp:" #method " getter");                                                     \
+        }                                                                                                              \
+    }                                                                                                                  \
+                                                                                                                       \
+    void pt_debugger::method(long value) {                                                                             \
+        regs_changed = true;                                                                                           \
+        switch (abi_) {                                                                                                \
+            case PTBOX_ABI_ARM:                                                                                        \
+                regs.reg_name = value;                                                                                 \
+            case PTBOX_ABI_INVALID:                                                                                    \
+                return;                                                                                                \
+            default:                                                                                                   \
+                UNKNOWN_ABI("ptdebug_arm.cpp:" #method " setter");                                                     \
+        }                                                                                                              \
     }
 
 MAKE_ACCESSOR(result, ARM_r0)
@@ -82,13 +80,7 @@ MAKE_ACCESSOR(arg5, ARM_r5)
 #undef MAKE_ACCESSOR
 
 bool pt_debugger::is_end_of_first_execve() {
-    if (process->use_seccomp()) {
-        return syscall() == 11;
-    } else {
-        // There is no orig_x8 on ARM, and execve clears all registers when finished.
-        // Therefore, 0 is the register value when coming out of a system call.
-        return !is_enter() && syscall() == 0 && result() == 0;
-    }
+    return syscall() == 11;
 }
 
 #endif /* __arm__ */

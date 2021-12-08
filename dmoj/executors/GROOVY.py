@@ -1,24 +1,20 @@
 import os
 import subprocess
+from pathlib import Path
 
 from dmoj.executors.java_executor import JavaExecutor
 from dmoj.utils.unicode import utf8text
 
-with open(os.path.join(os.path.dirname(__file__), 'groovy-security.policy')) as policy_file:
-    policy = policy_file.read()
-
 
 class Executor(JavaExecutor):
-    name = 'GROOVY'
     ext = 'groovy'
 
     compiler = 'groovyc'
     vm = 'groovy_vm'
-    security_policy = policy
 
-    test_program = '''\
+    test_program = """\
 println System.in.newReader().readLine()
-'''
+"""
 
     def create_files(self, problem_id, source_code, *args, **kwargs):
         super().create_files(problem_id, source_code, *args, **kwargs)
@@ -32,6 +28,9 @@ println System.in.newReader().readLine()
 
     def get_compile_args(self):
         return [self.get_compiler(), self._code]
+
+    def get_compile_env(self):
+        return {'JAVA_HOME': str(Path(os.path.realpath(self.get_vm())).parent.parent)}
 
     @classmethod
     def get_versionable_commands(cls):

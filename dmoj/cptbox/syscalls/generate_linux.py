@@ -67,8 +67,9 @@ with open('linux-arm.tbl', 'w') as arm, utf8reader(urlopen(LINUX_SYSCALLS_ARM)) 
         print('%d\t%s' % (int(id_str), name), file=arm)
 
 renr = re.compile(r'#define\s+__NR(?:3264)?_([a-z0-9_]+)\s+(\d+)')
-with open('linux-generic.tbl', 'w') as generic64, open('linux-generic32.tbl', 'w') as generic32, \
-        utf8reader(urlopen(LINUX_SYSCALLS_GENERIC)) as data:
+with open('linux-generic.tbl', 'w') as generic64, open('linux-generic32.tbl', 'w') as generic32, utf8reader(
+    urlopen(LINUX_SYSCALLS_GENERIC)
+) as data:
     only_32 = False
     for line in data:
         if '#undef __NR_syscalls' in line:
@@ -93,16 +94,20 @@ with open('aliases.list') as aliases:
     for line in aliases:
         names.add(line.split()[1])
 
+with open('freebsd.tbl') as freebsd:
+    for line in freebsd:
+        names.add(line.split()[1])
+
 with open('../syscalls.pyi', 'w') as interface:
     print(
-        '''\
-from typing import List, Dict
+        """\
+from typing import List, Dict, Tuple
 
-translator: List[List[int]]
+translator: List[Tuple[List[int], ...]]
 by_name: Dict[str, int]
 by_id: List[str]
 SYSCALL_COUNT: int
-''',
+""",
         file=interface,
     )
     for name in sorted(names):

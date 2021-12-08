@@ -1,4 +1,4 @@
-DMOJ Judge [![amd64 Build Status](https://img.shields.io/github/workflow/status/DMOJ/judge-server/build?logo=github)](https://github.com/DMOJ/judge-server/actions?query=workflow%3Abuild) [![arm64 Build Status](https://img.shields.io/travis/DMOJ/judge-server/master?label=arm64&logo=travis)](https://travis-ci.org/github/DMOJ/judge-server) [![FreeBSD Build Status](https://img.shields.io/jenkins/build?jobUrl=https%3A%2F%2Fci.dmoj.ca%2Fview%2FDMOJ%2Fjob%2Fdmoj-judge-freebsd-py3%2F&logo=freebsd)](https://ci.dmoj.ca/view/DMOJ/job/dmoj-judge-freebsd-py3/) [![Coverage](https://img.shields.io/codecov/c/github/DMOJ/judge-server.svg)](https://codecov.io/gh/DMOJ/judge-server) [![Slack](https://slack.dmoj.ca/badge.svg)](https://slack.dmoj.ca)
+DMOJ Judge [![Linux Build Status](https://img.shields.io/github/workflow/status/DMOJ/judge-server/build?logo=github)](https://github.com/DMOJ/judge-server/actions?query=workflow%3Abuild) [![FreeBSD Build Status](https://img.shields.io/jenkins/build?jobUrl=https%3A%2F%2Fci.dmoj.ca%2Fview%2FDMOJ%2Fjob%2Fdmoj-judge-freebsd-py3%2F&logo=freebsd)](https://ci.dmoj.ca/view/DMOJ/job/dmoj-judge-freebsd-py3/) [![Coverage](https://img.shields.io/codecov/c/github/DMOJ/judge-server.svg)](https://codecov.io/gh/DMOJ/judge-server) [![Slack](https://slack.dmoj.ca/badge.svg)](https://slack.dmoj.ca)
 =====
 
 Python [AGPLv3](LICENSE) contest judge backend for the [DMOJ site](http://github.com/DMOJ/online-judge) interface. See it in action at [dmoj.ca](https://dmoj.ca/)!
@@ -21,21 +21,24 @@ A modern online judge and contest platform system, supporting <b>IO-based</b>, <
 
 The judge implements secure grading on Linux and FreeBSD machines.
 
-|           | Linux 	| FreeBSD 	|
+|       | Linux 	| FreeBSD 	|
 |------	|-------	|---------	|
-| x64  	| [✔](https://travis-ci.org/DMOJ/judge-server)     	| [✔](https://ci.dmoj.ca/job/dmoj-judge-freebsd/)       	|
+| x64  	| [✔](https://github.com/DMOJ/judge-server/actions/workflows/build.yml)     	| [✔](https://ci.dmoj.ca/job/dmoj-judge-freebsd/)       	|
 | x86  	| ✔     	|       ¯\\\_(ツ)\_/¯   |
 | x32 	| ✔     	|      &mdash;   	|
-| ARM  	| ✔     	|      ❌   	|
+| ARM  	| [✔](https://github.com/DMOJ/judge-server/actions/workflows/build.yml)     	|      ❌   	|
 
 Versions up to and including [v1.4.0](https://github.com/DMOJ/judge-server/releases/tag/v1.4.0) also supported grading on Windows machines.
+
+Versions up to and including [v3.0.2](https://github.com/DMOJ/judge-server/releases/tag/v3.0.2) also supported grading
+with pure ptrace without seccomp, which is useful on Linux kernel versions before 4.8.
 
 The DMOJ judge does **not** need a root user to run on Linux machines: it will run just fine under a normal user.
 
 Supported languages include:
 * C++ 11/14/17/20 (GCC and Clang)
 * C 99/11
-* Java 8/9/10/11/15
+* Java 8/9/10/11/15/17
 * Python 2/3
 * PyPy 2/3
 * Pascal
@@ -107,8 +110,6 @@ $ pip install -e .
 
 Several environment variables can be specified to control the compilation of the sandbox:
 
-* `DMOJ_USE_SECCOMP`; set it to `no` if you're building on a pre-Linux 3.5 kernel to disable `seccomp` filtering in favour of pure `ptrace` (slower).
-   This flag has no effect when building outside of Linux.
 * `DMOJ_TARGET_ARCH`; use it to override the default architecture specified for compiling the sandbox (via `-march`).
    Usually this is `native`, but will not be specified on ARM unless `DMOJ_TARGET_ARCH` is set (a generic, slow build will be compiled instead).
 

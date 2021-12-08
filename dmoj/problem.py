@@ -12,9 +12,8 @@ from yaml.scanner import ScannerError
 
 from dmoj import checkers
 from dmoj.config import ConfigNode, InvalidInitException
-from dmoj.generator import GeneratorManager
 from dmoj.judgeenv import env, get_problem_root
-from dmoj.utils.helper_files import parse_helper_file_error
+from dmoj.utils.helper_files import compile_with_auxiliary_files, parse_helper_file_error
 from dmoj.utils.module import load_module_from_file
 
 DEFAULT_TEST_CASE_INPUT_PATTERN = r'^(?=.*?\.in|in).*?(?:(?:^|\W)(?P<batch>\d+)[^\d\s]+)?(?P<case>\d+)[^\d\s]*$'
@@ -27,38 +26,21 @@ class Problem:
         self.time_limit = time_limit
         self.memory_limit = memory_limit
         self.meta = ConfigNode(meta)
-        self.generator_manager = GeneratorManager()
 
         # Cache root dir so that we don't need to scan all roots (potentially very slow on networked mount).
         self.root_dir = get_problem_root(problem_id)
-        self.problem_data = ProblemDataManager(self)
+        self.problem_data = ProblemDataManager(self.root_dir)
 
         # Checkers modules must be stored in a dict, for the duration of execution,
         # lest globals be deleted with the module.
         self._checkers = {}
 
-        try:
-            doc = yaml.safe_load(self.problem_data['init.yml'])
-            if not doc:
-                raise InvalidInitException('I find your lack of content disturbing.')
-            self.config = ConfigNode(
-                doc,
-                defaults={
-                    'wall_time_factor': 3,
-                    'output_prefix_length': 0 if 'signature_grader' in doc else 64,
-                    'output_limit_length': 25165824,
-                    'binary_data': False,
-                    'short_circuit': True,
-                    'points': 1,
-                    'symlinks': {},
-                    'meta': meta,
-                },
-            )
-        except (IOError, KeyError, ParserError, ScannerError) as e:
-            raise InvalidInitException(str(e))
+        self.config = ProblemConfig(self.problem_data, meta)
 
         self.problem_data.archive = self._resolve_archive_files()
-        self._resolve_test_cases()
+
+        if not self._resolve_test_cases():
+            raise InvalidInitException('No test cases? What am I judging?')
 
     def _match_test_cases(self, filenames, input_case_pattern, output_case_pattern, case_points):
         def try_match_int(match, group):
@@ -106,7 +88,7 @@ class Problem:
                 setattr(groups[batch][case], filetype, testcase_file)
 
         test_cases = []
-        for batch_or_case_id in sorted(groups.keys()):
+        for batch_or_case_id in sorted(groups.keys(), key=lambda id: (isinstance(id, int), id)):
             group_cases = groups[batch_or_case_id]
             if batch_or_case_id in batch_ids:
                 test_cases.append(
@@ -140,7 +122,7 @@ class Problem:
 
         # We support several ways for specifying cases. The first is a list of cases, and requires no extra work.
         if test_cases is not None and isinstance(test_cases.unwrap(), list):
-            return
+            return test_cases
 
         def get_with_default(name, default):
             if not test_cases:
@@ -154,6 +136,8 @@ class Problem:
             re.compile(get_with_default('output_format', DEFAULT_TEST_CASE_OUTPUT_PATTERN), re.IGNORECASE),
             iter(get_with_default('case_points', itertools.repeat(self.config.points))),
         )
+
+        return self.config['test_cases']
 
     def load_checker(self, name):
         if name in self._checkers:
@@ -188,25 +172,49 @@ class Problem:
 
 
 class ProblemDataManager(dict):
-    def __init__(self, problem, **kwargs):
+    def __init__(self, problem_root_dir, **kwargs):
         super().__init__(**kwargs)
-        self.problem = problem
+        self.problem_root_dir = problem_root_dir
         self.archive = None
 
     def __missing__(self, key):
         try:
-            with open(os.path.join(self.problem.root_dir, key), 'rb') as f:
+            with open(os.path.join(self.problem_root_dir, key), 'rb') as f:
                 return f.read()
         except IOError:
             if self.archive:
                 zipinfo = self.archive.getinfo(key)
                 with self.archive.open(zipinfo) as f:
                     return f.read()
-            raise KeyError('file "%s" could not be found in "%s"' % (key, self.problem.root_dir))
+            raise KeyError('file "%s" could not be found in "%s"' % (key, self.problem_root_dir))
 
     def __del__(self):
         if self.archive:
             self.archive.close()
+
+
+class ProblemConfig(ConfigNode):
+    def __init__(self, problem_data, meta={}):
+        try:
+            doc = yaml.safe_load(problem_data['init.yml'])
+        except (IOError, KeyError, ParserError, ScannerError) as e:
+            raise InvalidInitException(str(e))
+        else:
+            if not doc:
+                raise InvalidInitException('I find your lack of content disturbing.')
+            super().__init__(
+                doc,
+                defaults={
+                    'wall_time_factor': 3,
+                    'output_prefix_length': 0 if 'signature_grader' in doc else 64,
+                    'output_limit_length': 25165824,
+                    'binary_data': False,
+                    'short_circuit': True,
+                    'points': 1,
+                    'symlinks': {},
+                    'meta': meta,
+                },
+            )
 
 
 class BatchedTestCase:
@@ -216,7 +224,7 @@ class BatchedTestCase:
         self.points = config.points
         self.batched_cases = cases
         if any(isinstance(case, BatchedTestCase) for case in self.batched_cases):
-            raise InvalidInitException("nested batches")
+            raise InvalidInitException('nested batches')
         self.problem = problem
 
     def __str__(self):
@@ -235,7 +243,7 @@ class TestCase:
         self._generated = None
 
     def _normalize(self, data):
-        # Perhaps the correct answer may be "no output", in which case it'll be
+        # Perhaps the correct answer may be 'no output', in which case it'll be
         # None here if sourced from a generator.
         data = data or b''
 
@@ -264,7 +272,6 @@ class TestCase:
         time_limit = env.generator_time_limit
         memory_limit = env.generator_memory_limit
         compiler_time_limit = env.generator_compiler_time_limit
-        should_cache = True
         lang = None  # Default to C/C++
 
         base = get_problem_root(self.problem.id)
@@ -278,7 +285,7 @@ class TestCase:
             elif isinstance(gen.source.unwrap(), list):
                 filenames = list(gen.source.unwrap())
             else:
-                raise InvalidInitException("invalid generator declaration")
+                raise InvalidInitException('invalid generator declaration')
 
             if gen.flags:
                 flags += gen.flags
@@ -288,16 +295,13 @@ class TestCase:
             time_limit = gen.time_limit or time_limit
             memory_limit = gen.memory_limit or memory_limit
             compiler_time_limit = gen.compiler_time_limit or compiler_time_limit
-            should_cache = gen.get('cached', True)
             lang = gen.language
 
         if not isinstance(filenames, list):
             filenames = [filenames]
 
-        filenames = [os.path.join(base, name) for name in filenames]
-        executor = self.problem.generator_manager.get_generator(
-            filenames, flags, lang=lang, compiler_time_limit=compiler_time_limit, should_cache=should_cache
-        )
+        filenames = [os.path.abspath(os.path.join(base, name)) for name in filenames]
+        executor = compile_with_auxiliary_files(filenames, flags, lang, compiler_time_limit)
 
         # convert all args to str before launching; allows for smoother int passing
         args = map(str, args)

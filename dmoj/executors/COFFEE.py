@@ -1,11 +1,11 @@
 import os
 
+from dmoj.cptbox.filesystem_policies import ExactFile
 from dmoj.executors.script_executor import ScriptExecutor
 
 
 class Executor(ScriptExecutor):
     ext = 'coffee'
-    name = 'COFFEE'
     nproc = -1
     command = 'node'
     syscalls = [
@@ -20,12 +20,12 @@ class Executor(ScriptExecutor):
         'eventfd2',
         'statx',
     ]
-    test_program = '''\
+    test_program = """\
 process.stdin.on 'readable', () ->
   chunk = process.stdin.read()
   if chunk != null
     process.stdout.write chunk
-'''
+"""
     address_grace = 1048576
 
     @classmethod
@@ -38,7 +38,7 @@ process.stdin.on 'readable', () ->
         return [self.get_command(), self.runtime_dict['coffee'], self._code]
 
     def get_fs(self):
-        return super().get_fs() + [self.runtime_dict['coffee'], self._code]
+        return super().get_fs() + [ExactFile(self.runtime_dict['coffee']), ExactFile(self._code)]
 
     @classmethod
     def get_versionable_commands(cls):

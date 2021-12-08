@@ -5,8 +5,7 @@ class Executor(CPPExecutor):
     command = 'g++17'
     command_paths = ['g++-7', 'g++']
     std = 'c++17'
-    name = 'CPP17'
-    test_program = '''
+    test_program = """
 #include <iostream>
 
 int main() {
@@ -15,4 +14,4 @@ int main() {
     std::cout << input;
     return 0;
 }
-'''
+"""

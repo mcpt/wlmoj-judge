@@ -3,9 +3,8 @@ from dmoj.executors.asm_executor import GASExecutor, PlatformX64Mixin
 
 class Executor(PlatformX64Mixin, GASExecutor):
     as_name = 'as_x64'
-    name = 'GAS64'
 
-    test_program = r'''.intel_syntax noprefix
+    test_program = r""".intel_syntax noprefix
 
 .text
 .global  _start
@@ -35,4 +34,4 @@ _exit:
 .bss
 buffer:
 	.skip	4096
-'''  # noqa: W191
+"""  # noqa: W191

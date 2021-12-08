@@ -1,28 +1,32 @@
 import os
 import subprocess
 
+from dmoj.cptbox.filesystem_policies import ExactFile, RecursiveDir
 from dmoj.executors.java_executor import JavaExecutor
 from dmoj.utils.unicode import utf8text
-
-with open(os.path.join(os.path.dirname(__file__), 'scala-security.policy')) as policy_file:
-    policy = policy_file.read()
 
 
 # Must emulate terminal, otherwise `scalac` hangs on a call to `stty`
 class Executor(JavaExecutor):
-    name = 'SCALA'
     ext = 'scala'
 
     compiler = 'scalac'
     compiler_time_limit = 20
+    compiler_read_fs = [
+        ExactFile('/bin/uname'),
+        ExactFile('/bin/readlink'),
+        ExactFile('/bin/grep'),
+        ExactFile('/bin/stty'),
+        ExactFile('/bin/bash'),
+        RecursiveDir('/etc/alternatives'),
+    ]
     vm = 'scala_vm'
-    security_policy = policy
 
-    test_program = '''\
+    test_program = """\
 object self_test extends App {
      println("echo: Hello, World!")
 }
-'''
+"""
 
     def create_files(self, problem_id, source_code, *args, **kwargs):
         super().create_files(problem_id, source_code, *args, **kwargs)

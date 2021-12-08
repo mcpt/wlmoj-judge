@@ -1,11 +1,16 @@
+from dmoj.cptbox.filesystem_policies import RecursiveDir
 from dmoj.executors.compiled_executor import CompiledExecutor
 
 
 class Executor(CompiledExecutor):
     ext = 'zig'
-    name = 'ZIG'
     command = 'zig'
-    test_program = '''
+    compiler_time_limit = 30
+    compiler_read_fs = [
+        RecursiveDir('~/.cache'),
+    ]
+    compiler_write_fs = compiler_read_fs
+    test_program = """
 const std = @import("std");
 
 pub fn main() !void {
@@ -18,7 +23,7 @@ pub fn main() !void {
         if (line.len == 0) break;
         try stdout.print("{}", .{line});
     }
-}'''
+}"""
 
     def create_files(self, problem_id, source_code, *args, **kwargs):
         # This cleanup needs to happen because Zig refuses to compile carriage returns.

@@ -5,8 +5,7 @@ class Executor(GCCExecutor):
     command = 'gcc'
     flags = ['-std=c99']
     ext = 'c'
-    name = 'C'
-    test_program = '''
+    test_program = """
 #include <stdio.h>
 
 int main() {
@@ -15,4 +14,4 @@ int main() {
         putchar(ch);
     return 0;
 }
-'''
+"""

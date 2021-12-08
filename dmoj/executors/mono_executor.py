@@ -1,8 +1,10 @@
 import os
 import re
 from collections import deque
+from typing import Dict, List, Optional
 
 from dmoj.cptbox import TracedPopen
+from dmoj.cptbox.filesystem_policies import RecursiveDir
 from dmoj.cptbox.handlers import ACCESS_EAGAIN
 from dmoj.executors.compiled_executor import CompiledExecutor
 from dmoj.result import Result
@@ -17,7 +19,6 @@ class MonoTracedPopen(TracedPopen):
 
 
 class MonoExecutor(CompiledExecutor):
-    name = 'MONO'
     nproc = -1
     address_grace = 262144
     # Give Mono access to 64mb more data segment memory. This is a hack, for
@@ -32,11 +33,11 @@ class MonoExecutor(CompiledExecutor):
     # get flagged as MLE.
     data_grace = 65536
     cptbox_popen_class = MonoTracedPopen
-    fs = ['/etc/mono/']
+    fs = [RecursiveDir('/etc/mono')]
+    compiler_read_fs = fs
     # Mono sometimes forks during its crashdump procedure, but continues even if
     # the call to fork fails.
     syscalls = [
-        'sched_setscheduler',
         'wait4',
         'rt_sigsuspend',
         'msync',
@@ -45,7 +46,7 @@ class MonoExecutor(CompiledExecutor):
         ('fork', ACCESS_EAGAIN),
     ]
 
-    def get_env(self):
+    def get_env(self) -> Dict[str, str]:
         env = super().get_env()
         # Disable Mono's usage of /dev/shm, so we don't have to deal with
         # its extremely messy access patterns to it.
@@ -54,27 +55,29 @@ class MonoExecutor(CompiledExecutor):
         env['MONO_CRASH_NOFILE'] = '1'
         return env
 
-    def get_compiled_file(self):
+    def get_compiled_file(self) -> str:
         return self._file('%s.exe' % self.problem)
 
-    def get_cmdline(self, **kwargs):
+    def get_cmdline(self, **kwargs) -> List[str]:
+        assert self._executable is not None
         return ['mono', self._executable]
 
-    def get_executable(self):
+    def get_executable(self) -> str:
         return self.runtime_dict['mono']
 
     @classmethod
-    def get_find_first_mapping(cls):
+    def get_find_first_mapping(cls) -> Optional[Dict[str, List[str]]]:
         res = super().get_find_first_mapping()
-        res['mono'] = ['mono']
+        if res:
+            res['mono'] = ['mono']
         return res
 
-    def populate_result(self, stderr, result, process):
+    def populate_result(self, stderr: bytes, result: Result, process: TracedPopen) -> None:
         super().populate_result(stderr, result, process)
         if process.is_ir and b'Garbage collector could not allocate' in stderr:
             result.result_flag |= Result.MLE
 
-    def parse_feedback_from_stderr(self, stderr, process):
+    def parse_feedback_from_stderr(self, stderr: bytes, process: TracedPopen) -> str:
         match = deque(reexception.finditer(utf8text(stderr, 'replace')), maxlen=1)
         if not match:
             return ''
@@ -83,7 +86,7 @@ class MonoExecutor(CompiledExecutor):
         return exception
 
     @classmethod
-    def initialize(cls):
+    def initialize(cls) -> bool:
         if 'mono' not in cls.runtime_dict or not os.path.isfile(cls.runtime_dict['mono']):
             return False
         return super().initialize()

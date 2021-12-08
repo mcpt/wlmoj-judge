@@ -2,8 +2,9 @@ import atexit
 import readline
 import shlex
 import sys
-from typing import cast
+from typing import List, cast
 
+from dmoj.commands.base_command import GradedSubmission
 from dmoj.error import InvalidCommandException
 from dmoj.judge import Judge
 from dmoj.packet import PacketManager
@@ -61,6 +62,8 @@ class LocalPacketManager:
 
 
 class LocalJudge(Judge):
+    graded_submissions: List[GradedSubmission]
+
     def __init__(self):
         super().__init__(cast(PacketManager, LocalPacketManager(self)))
         self.submission_id_counter = 0
@@ -114,7 +117,7 @@ def cli_main():
                 return cmd.execute(line[1:])
             except InvalidCommandException as e:
                 if e.message:
-                    print_ansi("#ansi[%s](red|bold)\n" % e.message)
+                    print_ansi('#ansi[%s](red|bold)\n' % e.message)
                 print()
                 return 1
         else:
@@ -129,7 +132,7 @@ def cli_main():
             return run_command(judgeenv.cli_command)
         else:
             while True:
-                command = input(ansi_style("#ansi[dmoj](magenta)#ansi[>](green) ")).strip()
+                command = input(ansi_style('#ansi[dmoj](magenta)#ansi[>](green) ')).strip()
                 run_command(shlex.split(command))
     except (EOFError, KeyboardInterrupt):
         print()

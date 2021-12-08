@@ -1,3 +1,4 @@
+from dmoj.cptbox.filesystem_policies import RecursiveDir
 from dmoj.executors.compiled_executor import CompiledExecutor
 
 
@@ -6,15 +7,17 @@ from dmoj.executors.compiled_executor import CompiledExecutor
 # functioning opam + ocamlfind installation to work.
 class Executor(CompiledExecutor):
     ext = 'ml'
-    name = 'OCAML'
     command = 'ocamlfind'
-    test_program = '''
+    compiler_read_fs = [
+        RecursiveDir('~/.opam'),
+    ]
+    test_program = """
 open! Base
 open! Core
 open! Stdio
 
 let () = (In_channel.iter_lines Stdio.stdin ~f:print_endline)
-'''
+"""
 
     def get_compile_args(self):
         # fmt: off

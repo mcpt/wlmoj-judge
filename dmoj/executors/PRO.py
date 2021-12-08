@@ -3,9 +3,8 @@ from dmoj.executors.script_executor import ScriptExecutor
 
 class Executor(ScriptExecutor):
     ext = 'pl'
-    name = 'PRO'
     command = 'swipl'
-    test_program = '''
+    test_program = """
     :- set_prolog_flag(verbose,silent).
     :- prompt(_, '').
     :- use_module(library(readutil)).
@@ -19,7 +18,7 @@ class Executor(ScriptExecutor):
         true.
 
     :- main.
-'''
+"""
 
     def get_cmdline(self, **kwargs):
         return [self.get_command(), '--goal=main', '-c', self._code]

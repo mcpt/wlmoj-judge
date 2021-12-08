@@ -1,25 +1,23 @@
-import os.path
-
+from dmoj.cptbox.filesystem_policies import ExactFile
 from dmoj.executors.java_executor import JavaExecutor
-
-with open(os.path.join(os.path.dirname(__file__), 'java-security.policy')) as policy_file:
-    policy = policy_file.read()
 
 
 class Executor(JavaExecutor):
-    name = 'KOTLIN'
     ext = 'kt'
 
     compiler = 'kotlinc'
     compiler_time_limit = 20
+    compiler_read_fs = [
+        ExactFile('/bin/uname'),
+        ExactFile('/bin/bash'),
+    ]
     vm = 'kotlin_vm'
-    security_policy = policy
 
-    test_program = '''\
+    test_program = """\
 fun main(args: Array<String>) {
     println(readLine())
 }
-'''
+"""
 
     def create_files(self, problem_id, source_code, *args, **kwargs):
         super().create_files(problem_id, source_code, *args, **kwargs)

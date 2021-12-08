@@ -15,14 +15,13 @@ def decomment(x):
 
 class Executor(CompiledExecutor):
     ext = 'go'
-    name = 'GO'
     nproc = -1
     data_grace = 98304  # Go uses data segment for heap arena map
     address_grace = 786432
     command = 'go'
     syscalls = ['mincore', 'epoll_create1', 'epoll_ctl', 'epoll_pwait', 'pselect6', 'mlock']
     test_name = 'echo'
-    test_program = '''\
+    test_program = """\
 package main
 
 import "os"
@@ -33,7 +32,7 @@ func main() {
     bio := bufio.NewReader(os.Stdin)
     text, _ := bio.ReadString(0)
     fmt.Print(text)
-}'''
+}"""
 
     def get_compile_env(self):
         return {
@@ -42,6 +41,8 @@ func main() {
             'CGO_ENABLED': '0',
             # We need GOCACHE to compile on Debian 10.0+.
             'GOCACHE': os.path.join(self._dir, '.cache'),
+            # We need to set GOPATH to something on Go 1.16+.
+            'GOPATH': '/nonexistent-path',
         }
 
     def get_compile_args(self):

@@ -304,6 +304,14 @@
 439	faccessat2
 440	process_madvise
 441	epoll_pwait2
+442	mount_setattr
+443	quotactl_fd
+444	landlock_create_ruleset
+445	landlock_add_rule
+446	landlock_restrict_self
+447	memfd_secret
+448	process_mrelease
+449	futex_waitv
 512	rt_sigaction
 513	rt_sigreturn
 514	ioctl

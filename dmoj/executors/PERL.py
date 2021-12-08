@@ -1,11 +1,11 @@
+from dmoj.cptbox.filesystem_policies import RecursiveDir
 from dmoj.executors.script_executor import ScriptExecutor
 
 
 class Executor(ScriptExecutor):
     ext = 'pl'
-    name = 'PERL'
     command = 'perl'
-    fs = ['/etc/perl/.*?']
+    fs = [RecursiveDir('/etc/perl')]
     test_program = 'print<>'
     syscalls = ['umtx_op']
 

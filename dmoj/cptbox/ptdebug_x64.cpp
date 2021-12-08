@@ -20,9 +20,7 @@ bool pt_debugger::supports_abi(int abi) {
     return false;
 }
 
-#if PTBOX_SECCOMP
 uint32_t pt_debugger::seccomp_non_native_arch_list[] = { SCMP_ARCH_X86, SCMP_ARCH_X32, 0 };
-#endif
 
 int pt_debugger::abi_from_reg_size(size_t reg_size) {
     if (reg_size == sizeof regs.x86) {
@@ -74,36 +72,36 @@ int pt_debugger::syscall(int id) {
     }
 }
 
-#define MAKE_ACCESSOR(method, x86_name, x64_name) \
-    long pt_debugger::method() { \
-        switch (abi_) { \
-            case PTBOX_ABI_X86: \
-                return regs.x86.x86_name; \
-            case PTBOX_ABI_X32: \
-            case PTBOX_ABI_X64: \
-                return regs.x64.x64_name; \
-            case PTBOX_ABI_INVALID: \
-                return -1; \
-            default: \
-                UNKNOWN_ABI("ptdebug_x64.cpp:" #method " getter"); \
-        } \
-    } \
-    \
-    void pt_debugger::method(long value) { \
-        regs_changed = true; \
-        switch (abi_) { \
-            case PTBOX_ABI_X86: \
-                regs.x86.x86_name = value; \
-                return; \
-            case PTBOX_ABI_X32: \
-            case PTBOX_ABI_X64: \
-                regs.x64.x64_name = value; \
-                return; \
-            case PTBOX_ABI_INVALID: \
-                return; \
-            default: \
-                UNKNOWN_ABI("ptdebug_x64.cpp:" #method " setter"); \
-        } \
+#define MAKE_ACCESSOR(method, x86_name, x64_name)                                                                      \
+    long pt_debugger::method() {                                                                                       \
+        switch (abi_) {                                                                                                \
+            case PTBOX_ABI_X86:                                                                                        \
+                return regs.x86.x86_name;                                                                              \
+            case PTBOX_ABI_X32:                                                                                        \
+            case PTBOX_ABI_X64:                                                                                        \
+                return regs.x64.x64_name;                                                                              \
+            case PTBOX_ABI_INVALID:                                                                                    \
+                return -1;                                                                                             \
+            default:                                                                                                   \
+                UNKNOWN_ABI("ptdebug_x64.cpp:" #method " getter");                                                     \
+        }                                                                                                              \
+    }                                                                                                                  \
+                                                                                                                       \
+    void pt_debugger::method(long value) {                                                                             \
+        regs_changed = true;                                                                                           \
+        switch (abi_) {                                                                                                \
+            case PTBOX_ABI_X86:                                                                                        \
+                regs.x86.x86_name = value;                                                                             \
+                return;                                                                                                \
+            case PTBOX_ABI_X32:                                                                                        \
+            case PTBOX_ABI_X64:                                                                                        \
+                regs.x64.x64_name = value;                                                                             \
+                return;                                                                                                \
+            case PTBOX_ABI_INVALID:                                                                                    \
+                return;                                                                                                \
+            default:                                                                                                   \
+                UNKNOWN_ABI("ptdebug_x64.cpp:" #method " setter");                                                     \
+        }                                                                                                              \
     }
 
 MAKE_ACCESSOR(result, eax, rax)
@@ -117,15 +115,6 @@ MAKE_ACCESSOR(arg5, ebp, r9)
 #undef MAKE_ACCESSOR
 
 bool pt_debugger::is_end_of_first_execve() {
-    if (process->use_seccomp()) {
-        return syscall() == 59;
-    } else if (is_enter()) {
-        return false;
-    } else if (abi_ == PTBOX_ABI_X86) {
-        // When execve finishes in a 32-bit process, orig_eax turns to the 32-bit syscall ID.
-        return syscall() == 11 && result() == 0;
-    } else {
-        return syscall() == 59 && result() == 0;
-    }
+    return syscall() == 59;
 }
 #endif /* __amd64__ */

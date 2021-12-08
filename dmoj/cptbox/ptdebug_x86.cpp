@@ -13,9 +13,7 @@ bool pt_debugger::supports_abi(int abi) {
     return abi == PTBOX_ABI_X86;
 }
 
-#if PTBOX_SECCOMP
 uint32_t pt_debugger::seccomp_non_native_arch_list[] = { 0 };
-#endif
 
 int pt_debugger::abi_from_reg_size(size_t) {
     return PTBOX_ABI_X86;
@@ -51,28 +49,28 @@ int pt_debugger::syscall(int id) {
     }
 }
 
-#define MAKE_ACCESSOR(method, reg_name) \
-    long pt_debugger::method() { \
-        switch (abi_) { \
-            case PTBOX_ABI_X86: \
-                return regs.reg_name; \
-            case PTBOX_ABI_INVALID: \
-                return -1; \
-            default: \
-                UNKNOWN_ABI("ptdebug_x86.cpp:" #method " getter"); \
-        } \
-    } \
-    \
-    void pt_debugger::method(long value) { \
-        regs_changed = true; \
-        switch (abi_) { \
-            case PTBOX_ABI_X86: \
-                regs.reg_name = value; \
-            case PTBOX_ABI_INVALID: \
-                return; \
-            default: \
-                UNKNOWN_ABI("ptdebug_x86.cpp:" #method " setter"); \
-        } \
+#define MAKE_ACCESSOR(method, reg_name)                                                                                \
+    long pt_debugger::method() {                                                                                       \
+        switch (abi_) {                                                                                                \
+            case PTBOX_ABI_X86:                                                                                        \
+                return regs.reg_name;                                                                                  \
+            case PTBOX_ABI_INVALID:                                                                                    \
+                return -1;                                                                                             \
+            default:                                                                                                   \
+                UNKNOWN_ABI("ptdebug_x86.cpp:" #method " getter");                                                     \
+        }                                                                                                              \
+    }                                                                                                                  \
+                                                                                                                       \
+    void pt_debugger::method(long value) {                                                                             \
+        regs_changed = true;                                                                                           \
+        switch (abi_) {                                                                                                \
+            case PTBOX_ABI_X86:                                                                                        \
+                regs.reg_name = value;                                                                                 \
+            case PTBOX_ABI_INVALID:                                                                                    \
+                return;                                                                                                \
+            default:                                                                                                   \
+                UNKNOWN_ABI("ptdebug_x86.cpp:" #method " setter");                                                     \
+        }                                                                                                              \
     }
 
 MAKE_ACCESSOR(result, eax)
@@ -90,10 +88,6 @@ long pt_debugger::arg5() {
 void pt_debugger::arg5(long data) {}
 
 bool pt_debugger::is_end_of_first_execve() {
-    if (process->use_seccomp()) {
-        return syscall() == 11;
-    } else {
-        return !is_enter() && syscall() == 11 && result() == 0;
-    }
+    return syscall() == 11;
 }
 #endif /* __i386__ */

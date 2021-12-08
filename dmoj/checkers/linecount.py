@@ -4,7 +4,7 @@ from typing import Union
 from dmoj.result import CheckerResult
 from dmoj.utils.unicode import utf8bytes
 
-verdict = u"\u2717\u2713"
+verdict = '\u2717\u2713'
 
 
 def check(
@@ -28,8 +28,9 @@ def check(
             count += 1
 
     return CheckerResult(
-        count == len(judge_lines), point_value * (1.0 * count / len(judge_lines)),
-        extended_feedback=''.join(cases) if feedback else ""
+        count == len(judge_lines),
+        point_value * count / len(judge_lines),
+        extended_feedback='Case Feedback:\n' + ''.join(cases) if feedback else '',
     )
 
 

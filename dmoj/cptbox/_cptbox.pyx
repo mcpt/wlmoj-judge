@@ -1,5 +1,6 @@
 # cython: language_level=3
 from cpython.exc cimport PyErr_NoMemory, PyErr_SetFromErrno
+from cpython.bytes cimport PyBytes_AsString, PyBytes_FromStringAndSize
 from libc.stdio cimport FILE, fopen, fclose, fgets, sprintf
 from libc.stdlib cimport malloc, free, strtoul
 from libc.string cimport strncmp, strlen
@@ -21,7 +22,7 @@ cdef extern from 'ptbox.h' nogil:
     long ptrace_traceme()
 
     ctypedef int (*pt_handler_callback)(void *context, int syscall)
-    ctypedef void (*pt_syscall_return_callback)(void *context, int syscall)
+    ctypedef void (*pt_syscall_return_callback)(void *context, pid_t pid, int syscall)
     ctypedef int (*pt_fork_handler)(void *context)
     ctypedef int (*pt_event_callback)(void *context, int event, unsigned long param)
 
@@ -30,6 +31,8 @@ cdef extern from 'ptbox.h' nogil:
         int syscall(int)
         long result()
         void result(long)
+        long error()
+        void error(long)
         long arg0()
         long arg1()
         long arg2()
@@ -44,6 +47,7 @@ cdef extern from 'ptbox.h' nogil:
         void arg5(long)
         char *readstr(unsigned long, size_t)
         void freestr(char*)
+        bool readbytes(unsigned long, char *, size_t)
         pid_t getpid()
         pid_t gettid()
         int getpid_syscall()
@@ -64,11 +68,8 @@ cdef extern from 'ptbox.h' nogil:
         double wall_clock_time()
         const rusage *getrusage()
         bint was_initialized()
-        bool use_seccomp()
-        bool use_seccomp(bool enabled)
 
     cdef bint PTBOX_FREEBSD
-    cdef bint PTBOX_SECCOMP
     cdef int MAX_SYSCALL
 
     cdef int PTBOX_EVENT_ATTACH
@@ -116,9 +117,8 @@ cdef extern from 'helper.h' nogil:
         int stdin_
         int stdout_
         int stderr_
-        bool use_seccomp
         int abi_for_seccomp
-        bint *seccomp_whitelist
+        int *seccomp_handlers
 
     void cptbox_closefrom(int lowfd)
     int cptbox_child_run(child_config *)
@@ -151,8 +151,8 @@ cdef int pt_child(void *context) nogil:
 cdef int pt_syscall_handler(void *context, int syscall) nogil:
     return (<Process>context)._syscall_handler(syscall)
 
-cdef void pt_syscall_return_handler(void *context, int syscall) with gil:
-    (<Debugger>context)._on_return(syscall)
+cdef void pt_syscall_return_handler(void *context, pid_t pid, int syscall) with gil:
+    (<Debugger>context)._on_return(pid, syscall)
 
 cdef int pt_event_handler(void *context, int event, unsigned long param) nogil:
     return (<Process>context)._event_handler(event, param)
@@ -231,6 +231,7 @@ cdef class Debugger:
     def __cinit__(self, Process process):
         self.thisptr = new pt_debugger()
         self.process = process
+        self.on_return_callback = {}
 
     def __dealloc__(self):
         del self.thisptr
@@ -245,9 +246,7 @@ cdef class Debugger:
 
     @syscall.setter
     def syscall(self, int value):
-        # When using seccomp, -1 as syscall means "skip"; when we are not,
-        # we swap with a harmless syscall without side-effects (getpid).
-        if not self.process._use_seccomp() and value == -1:
+        if PTBOX_FREEBSD and value == -1:
             value = self.noop_syscall_id
         global errno
         errno = self.thisptr.syscall(value)
@@ -269,6 +268,14 @@ cdef class Debugger:
     @uresult.setter
     def uresult(self, value):
         self.thisptr.result(<long><unsigned long>value)
+
+    @property
+    def errno(self):
+        return <long>self.thisptr.error()
+
+    @errno.setter
+    def errno(self, value):
+        self.thisptr.error(<long>value)
 
     @property
     def arg0(self):
@@ -372,6 +379,12 @@ cdef class Debugger:
         self.thisptr.freestr(str)
         return pystr
 
+    def readbytes(self, unsigned long address, size_t size):
+        buffer = PyBytes_FromStringAndSize(NULL, size)
+        if not self.thisptr.readbytes(address, PyBytes_AsString(buffer), size):
+            PyErr_SetFromErrno(OSError)
+        return buffer
+
     @property
     def tid(self):
         return self.thisptr.gettid()
@@ -385,12 +398,12 @@ cdef class Debugger:
         return self.thisptr.abi()
 
     def on_return(self, callback):
-        self.on_return_callback = callback
+        self.on_return_callback[self.tid] = callback
         self.thisptr.on_return(pt_syscall_return_handler, <void*>self)
 
-    cdef _on_return(self, int syscall) with gil:
-        self.on_return_callback()
-        self.on_return_callback = None
+    cdef _on_return(self, pid_t pid, int syscall) with gil:
+        self.on_return_callback[pid]()
+        del self.on_return_callback[pid]
 
 
 cdef class Process:
@@ -462,14 +475,14 @@ cdef class Process:
     cpdef _cpu_time_exceeded(self):
         pass
 
-    cpdef _get_seccomp_whitelist(self):
-        raise NotImplementedError()
+    cpdef _get_seccomp_handlers(self):
+        return [-1] * MAX_SYSCALL
 
     cpdef _spawn(self, file, args, env=(), chdir=''):
         cdef child_config config
         config.argv = NULL
         config.envp = NULL
-        config.seccomp_whitelist = NULL
+        config.seccomp_handlers = NULL
 
         try:
             config.address_space = self._child_address
@@ -486,22 +499,23 @@ cdef class Process:
             config.argv = alloc_byte_array(args)
             config.envp = alloc_byte_array(env)
 
-            config.use_seccomp = self._use_seccomp()
-            if config.use_seccomp:
-                whitelist = self._get_seccomp_whitelist()
-                assert len(whitelist) == MAX_SYSCALL
-                config.seccomp_whitelist = <bint*>malloc(sizeof(bint) * MAX_SYSCALL)
-                if not config.seccomp_whitelist:
+            if not PTBOX_FREEBSD:
+                handlers = self._get_seccomp_handlers()
+                assert len(handlers) == MAX_SYSCALL
+
+                config.seccomp_handlers = <int*>malloc(sizeof(int) * MAX_SYSCALL)
+                if not config.seccomp_handlers:
                     PyErr_NoMemory()
+
                 for i in range(MAX_SYSCALL):
-                    config.seccomp_whitelist[i] = whitelist[i]
+                    config.seccomp_handlers[i] = handlers[i]
 
             if self.process.spawn(pt_child, &config):
                 raise RuntimeError('failed to spawn child')
         finally:
             free(config.argv)
             free(config.envp)
-            free(config.seccomp_whitelist)
+            free(config.seccomp_handlers)
 
     cpdef _monitor(self):
         cdef int exitcode
@@ -510,18 +524,6 @@ cdef class Process:
         self._exitcode = exitcode
         self._exited = True
         return self._exitcode
-
-    cdef inline bool _use_seccomp(self):
-        return self.process.use_seccomp()
-
-    @property
-    def use_seccomp(self):
-        return self.process.use_seccomp()
-
-    @use_seccomp.setter
-    def use_seccomp(self, bool enabled):
-        if not self.process.use_seccomp(enabled):
-            raise RuntimeError("Can't change whether seccomp is used after process is created.")
 
     @property
     def was_initialized(self):

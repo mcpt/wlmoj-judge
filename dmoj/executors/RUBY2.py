@@ -1,18 +1,18 @@
 import os
 import re
 
+from dmoj.cptbox.filesystem_policies import ExactFile
 from dmoj.executors.script_executor import ScriptExecutor
 
 
 class Executor(ScriptExecutor):
     ext = 'rb'
-    name = 'RUBY2'
     address_grace = 65536
     test_program = 'puts gets'
     nproc = -1
     command_paths = ['ruby2.%d' % i for i in reversed(range(0, 8))] + ['ruby2%d' % i for i in reversed(range(0, 8))]
     syscalls = ['thr_set_name', 'eventfd2']
-    fs = ['/proc/self/loginuid$']
+    fs = [ExactFile('/proc/self/loginuid')]
 
     def get_fs(self):
         fs = super().get_fs()

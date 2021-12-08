@@ -1,13 +1,22 @@
 import logging
 import os
-import re
 import sys
+from typing import Optional, Tuple
 
-from dmoj.cptbox._cptbox import AT_FDCWD, bsd_get_proc_cwd, bsd_get_proc_fdno
-from dmoj.cptbox.tracer import MaxLengthExceeded
-from dmoj.cptbox.handlers import ACCESS_EACCES, ACCESS_ENOENT, ACCESS_EPERM, ALLOW
-
+from dmoj.cptbox._cptbox import AT_FDCWD, Debugger, bsd_get_proc_cwd, bsd_get_proc_fdno
+from dmoj.cptbox.filesystem_policies import FilesystemPolicy
+from dmoj.cptbox.handlers import (
+    ACCESS_EACCES,
+    ACCESS_EFAULT,
+    ACCESS_EINVAL,
+    ACCESS_ENAMETOOLONG,
+    ACCESS_ENOENT,
+    ACCESS_EPERM,
+    ALLOW,
+    ErrnoHandlerCallback,
+)
 from dmoj.cptbox.syscalls import *
+from dmoj.cptbox.tracer import HandlerCallback, MaxLengthExceeded
 from dmoj.utils.unicode import utf8text
 
 log = logging.getLogger('dmoj.security')
@@ -23,10 +32,8 @@ except AttributeError:
 class IsolateTracer(dict):
     def __init__(self, read_fs, write_fs=None, writable=(1, 2)):
         super().__init__()
-        self.read_fs = read_fs
-        self.write_fs = write_fs
-        self.read_fs_jail = {}
-        self.write_fs_jail = {}
+        self.read_fs_jail = self._compile_fs_jail(read_fs)
+        self.write_fs_jail = self._compile_fs_jail(write_fs)
 
         self._writable = list(writable)
 
@@ -51,8 +58,6 @@ class IsolateTracer(dict):
                 sys_lstat: self.check_file_access('lstat', 0),
                 sys_lstat64: self.check_file_access('lstat64', 0),
                 sys_fstatat: self.check_file_access_at('fstatat'),
-                sys_mkdir: ACCESS_EPERM,
-                sys_unlink: ACCESS_EPERM,
                 sys_tgkill: self.do_kill,
                 sys_kill: self.do_kill,
                 sys_prctl: self.do_prctl,
@@ -75,6 +80,7 @@ class IsolateTracer(dict):
                 sys_sched_getscheduler: ALLOW,
                 sys_sched_get_priority_min: ALLOW,
                 sys_sched_get_priority_max: ALLOW,
+                sys_sched_setscheduler: ALLOW,
                 sys_timerfd_create: ALLOW,
                 sys_timer_create: ALLOW,
                 sys_timer_settime: ALLOW,
@@ -151,6 +157,7 @@ class IsolateTracer(dict):
         if 'freebsd' in sys.platform:
             self.update(
                 {
+                    sys_mkdir: ACCESS_EPERM,
                     sys_obreak: ALLOW,
                     sys_sysarch: ALLOW,
                     sys_sysctl: ALLOW,  # TODO: More strict?
@@ -182,10 +189,14 @@ class IsolateTracer(dict):
                     sys_ktimer_delete: ALLOW,
                     sys_cap_getmode: ALLOW,
                     sys_minherit: ALLOW,
+                    sys_thr_set_name: ALLOW,
                 }
             )
 
-    def is_write_flags(self, open_flags):
+    def _compile_fs_jail(self, fs):
+        return FilesystemPolicy(fs or [])
+
+    def is_write_flags(self, open_flags: int) -> bool:
         for flag in open_write_flags:
             # Strict equality is necessary here, since e.g. O_TMPFILE has multiple bits set,
             # and O_DIRECTORY & O_TMPFILE > 0.
@@ -194,104 +205,132 @@ class IsolateTracer(dict):
 
         return False
 
-    def check_file_access(self, syscall, argument, is_open=False):
-        def check(debugger):
-            file_ptr = getattr(debugger, 'uarg%d' % argument)
-            try:
-                file = debugger.readstr(file_ptr)
-            except MaxLengthExceeded as e:
-                log.warning('Denied access via syscall %s to overly long path: %r', syscall, e.args[0])
-                return ACCESS_ENOENT(debugger)
-            except UnicodeDecodeError as e:
-                log.warning('Denied access via syscall %s to path with invalid unicode: %r', syscall, e.object)
-                return ACCESS_ENOENT(debugger)
+    @staticmethod
+    def read_path(syscall: str, debugger: Debugger, ptr: int):
+        try:
+            file = debugger.readstr(ptr)
+        except MaxLengthExceeded as e:
+            log.warning('Denied access via syscall %s to overly long path: %r', syscall, e.args[0])
+            return None, ACCESS_ENAMETOOLONG(debugger)
+        except UnicodeDecodeError as e:
+            log.warning('Denied access via syscall %s to path with invalid unicode: %r', syscall, e.object)
+            return None, ACCESS_ENOENT(debugger)
+        return file, None
 
-            file, accessible = self._file_access_check(file, debugger, is_open)
-            if accessible:
+    def check_file_access(self, syscall, argument, is_write=None, is_open=False) -> HandlerCallback:
+        assert is_write is None or not is_open
+
+        def check(debugger: Debugger) -> bool:
+            file, error = self.read_path(syscall, debugger, getattr(debugger, 'uarg%d' % argument))
+            if error is not None:
+                return error
+
+            file, error = self._file_access_check(file, debugger, is_open, is_write=is_write)
+            if not error:
                 return True
 
-            log.debug('Denied access via syscall %s: %s', syscall, file)
-            return ACCESS_ENOENT(debugger)
+            log.debug('Denied access via syscall %s (error: %s): %s', syscall, error.error_name, file)
+            return error(debugger)
 
         return check
 
-    def check_file_access_at(self, syscall, is_open=False):
-        def check(debugger):
-            try:
-                file = debugger.readstr(debugger.uarg1)
-            except MaxLengthExceeded as e:
-                log.warning('Denied access via syscall %s to overly long path: %r', syscall, e.args[0])
-                return ACCESS_ENOENT(debugger)
-            except UnicodeDecodeError as e:
-                log.warning('Denied access via syscall %s to path with invalid unicode: %r', syscall, e.object)
-                return ACCESS_ENOENT(debugger)
+    def check_file_access_at(self, syscall, argument=1, is_open=False, is_write=None) -> HandlerCallback:
+        def check(debugger: Debugger) -> bool:
+            file, error = self.read_path(syscall, debugger, getattr(debugger, 'uarg%d' % argument))
+            if error is not None:
+                return error
 
-            file, accessible = self._file_access_check(file, debugger, is_open, dirfd=debugger.arg0, flag_reg=2)
-            if accessible:
+            file, error = self._file_access_check(
+                file, debugger, is_open, is_write=is_write, dirfd=debugger.arg0, flag_reg=2
+            )
+            if not error:
                 return True
 
-            log.debug('Denied access via syscall %s: %s', syscall, file)
-            return ACCESS_ENOENT(debugger)
+            log.debug('Denied access via syscall %s (error: %s): %s', syscall, error.error_name, file)
+            return error(debugger)
 
         return check
 
-    def _get_fs_jail(self, debugger, is_write):
-        # The only syscalls that can ever have is_write=True are open and
-        # openat: if we ever want to support syscalls like unlink or mkdir,
-        # this behaviour will need to be changed. Currently, they result in
-        # an unconditional EPERM.
-        jail = self.write_fs_jail if is_write else self.read_fs_jail
-        fs = jail.get(debugger.pid)
-
-        if fs is None:
-            fs_parts = self.write_fs if is_write else self.read_fs
-            if fs_parts:
-                fs_re = '|'.join(map(lambda p: p.format(pid=debugger.pid), fs_parts))
-            else:
-                fs_re = '(?!)'  # Disallow accessing everything by default.
-
-            fs = re.compile(fs_re)
-            jail[debugger.pid] = fs
-
-        return fs
-
-    def _file_access_check(self, rel_file, debugger, is_open, flag_reg=1, dirfd=AT_FDCWD):
+    def _file_access_check(
+        self, rel_file, debugger, is_open, is_write=None, flag_reg=1, dirfd=AT_FDCWD
+    ) -> Tuple[str, Optional[ErrnoHandlerCallback]]:
         # Either process called open(NULL, ...), or we failed to read the path
         # in cptbox.  Either way this call should not be allowed; if the path
         # was indeed NULL we can end the request before it gets to the kernel
         # without any downside, and if it was *not* NULL and we failed to read
         # it, then we should *definitely* stop the call here.
         if rel_file is None:
-            return '(nil)', False
+            return '(nil)', ACCESS_EFAULT
+
+        if is_write is None and is_open:
+            is_write = self.is_write_flags(getattr(debugger, 'uarg%d' % flag_reg))
+        fs_jail = self.write_fs_jail if is_write else self.read_fs_jail
 
         try:
             file = self.get_full_path(debugger, rel_file, dirfd)
         except UnicodeDecodeError:
             log.exception('Unicode decoding error while opening relative to %d: %r', dirfd, rel_file)
-            return '(undecodable)', False
+            return '(undecodable)', ACCESS_EINVAL
 
-        is_write = is_open and self.is_write_flags(getattr(debugger, 'uarg%d' % flag_reg))
-        if self._get_fs_jail(debugger, is_write).match(file) is None:
-            return file, False
-        return file, True
+        # We want to ensure that if there are symlinks, the user must be able to access both the symlink and
+        # its destination. However, we are doing path-based checks, which means we have to check these as
+        # as normalized paths. normpath can normalize a path, but also changes the meaning of paths in presence of
+        # symlinked directories etc. Therefore, we compare both realpath and normpath and ensure that they refer to
+        # the same file, and check the accessibility of both.
+        #
+        # This works, except when the child process uses /proc/self, which refers to something else in this process.
+        # Therefore, we "project" it by changing it to /proc/[tid] for computing the realpath and doing the samefile
+        # check. However, we still keep it as /proc/self when checking access rules.
+        projected = normalized = '/' + os.path.normpath(file).lstrip('/')
+        if normalized.startswith('/proc/self'):
+            file = os.path.join(f'/proc/{debugger.tid}', os.path.relpath(file, '/proc/self'))
+            projected = '/' + os.path.normpath(file).lstrip('/')
+        real = os.path.realpath(file)
 
-    def get_full_path(self, debugger, file, dirfd=AT_FDCWD):
+        try:
+            same = normalized == real or os.path.samefile(projected, real)
+        except OSError:
+            log.debug('Denying access due to inability to stat: normalizes to: %s, actually: %s', normalized, real)
+            return file, ACCESS_ENOENT
+        else:
+            if not same:
+                log.warning(
+                    'Denying access due to suspected symlink trickery: normalizes to: %s, actually: %s',
+                    normalized,
+                    real,
+                )
+                return file, ACCESS_EACCES
+
+        if not fs_jail.check(normalized):
+            return normalized, ACCESS_EACCES
+
+        if normalized != real:
+            proc_dir = f'/proc/{debugger.tid}'
+            if real.startswith(proc_dir):
+                real = os.path.join('/proc/self', os.path.relpath(real, proc_dir))
+
+            if not fs_jail.check(real):
+                return real, ACCESS_EACCES
+
+        return normalized, None
+
+    def get_full_path(self, debugger: Debugger, file: str, dirfd: int = AT_FDCWD) -> str:
         dirfd = (dirfd & 0x7FFFFFFF) - (dirfd & 0x80000000)
         if not file.startswith('/'):
-            dir = self._getcwd_pid(debugger.pid) if dirfd == AT_FDCWD else self._getfd_pid(debugger.pid, dirfd)
+            dir = self._getcwd_pid(debugger.tid) if dirfd == AT_FDCWD else self._getfd_pid(debugger.tid, dirfd)
             file = os.path.join(dir, file)
         file = '/' + os.path.normpath(file).lstrip('/')
         return file
 
-    def do_kill(self, debugger):
+    def do_kill(self, debugger: Debugger) -> bool:
         # Allow tgkill to execute as long as the target thread group is the debugged process
         # libstdc++ seems to use this to signal itself, see <https://github.com/DMOJ/judge/issues/183>
         return True if debugger.uarg0 == debugger.pid else ACCESS_EPERM(debugger)
 
-    def do_prlimit(self, debugger):
+    def do_prlimit(self, debugger: Debugger) -> bool:
         return True if debugger.uarg0 in (0, debugger.pid) else ACCESS_EPERM(debugger)
 
-    def do_prctl(self, debugger):
+    def do_prctl(self, debugger: Debugger) -> bool:
         PR_GET_DUMPABLE = 3
         PR_SET_NAME = 15
         PR_GET_NAME = 16

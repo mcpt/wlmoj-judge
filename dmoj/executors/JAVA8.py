@@ -4,10 +4,9 @@ from dmoj.executors.java_executor import JavacExecutor
 class Executor(JavacExecutor):
     compiler = 'javac8'
     vm = 'java8'
-    name = 'JAVA8'
     jvm_regex = r'java-8-|jdk-8-|openjdk8|oracle-java8'
 
-    test_program = '''\
+    test_program = """\
 import java.io.IOException;
 
 interface IORunnable {
@@ -27,7 +26,7 @@ public class self_test {
                 System.out.write(buffer, 0, read);
         });
     }
-}'''
+}"""
 
     def get_compile_args(self):
         return [self.get_compiler(), '-encoding', 'UTF-8', '-profile', 'compact1', self._code]

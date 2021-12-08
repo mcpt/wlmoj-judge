@@ -1,26 +1,27 @@
-import os
-
+from dmoj.cptbox.filesystem_policies import ExactFile, RecursiveDir
 from dmoj.executors.compiled_executor import CompiledExecutor
 
 
 class Executor(CompiledExecutor):
     ext = 'rkt'
-    name = 'RKT'
-    fs = [os.path.expanduser(r'~/\.racket/'), os.path.expanduser(r'~/\.local/share/racket/'),
-          '/etc/racket/.*?', '/etc/passwd$']
+    fs = [RecursiveDir('/etc/racket'), ExactFile('/etc/passwd')]
+    compiler_read_fs = [
+        RecursiveDir('/etc/racket'),
+        RecursiveDir('~/.local/share/racket'),
+    ]
 
     command = 'racket'
 
-    syscalls = ['epoll_create', 'epoll_wait']
+    syscalls = ['epoll_create', 'epoll_create1', 'epoll_wait', 'epoll_pwait']
     # Racket SIGABRTs under low-memory conditions before actually crossing the memory limit,
     # so give it a bit of headroom to be properly marked as MLE.
     data_grace = 4096
     address_grace = 131072
 
-    test_program = '''\
+    test_program = """\
 #lang racket
 (displayln (read-line))
-'''
+"""
 
     def get_compile_args(self):
         return [self.runtime_dict['raco'], 'make', self._code]
