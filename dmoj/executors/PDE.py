@@ -11,7 +11,7 @@ resetup = re.compile(r'\bvoid\s+setup\s*\(\s*\)', re.U)
 
 PAPPLET_SOURCE = os.path.join(os.path.dirname(__file__), 'processing', 'PApplet.jar')
 
-template = b'''\
+template = b"""\
 import java.math.*;
 import java.util.*;
 
@@ -22,16 +22,16 @@ public class App extends PApplet {
         new App().setup();
     }
 }
-'''
+"""
 
 
 class Executor(JavaExecutor):
     name = 'PDE'
 
-    test_program = '''\
+    test_program = """\
 void setup() {
     println(readLine());
-}'''
+}"""
 
     def __init__(self, problem_id, source_code, **kwargs):
         if resetup.search(recomment.sub('', utf8text(source_code))) is None:
@@ -58,4 +58,4 @@ void setup() {
 
     @classmethod
     def get_runtime_versions(cls):
-        return ('pde', (3, 5, 3)),
+        return (('pde', (3, 5, 3)),)
