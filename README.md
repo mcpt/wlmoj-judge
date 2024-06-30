@@ -92,6 +92,8 @@ The judge can also grade in the languages listed below:
 * Turing
 * V8 JavaScript
 * Zig
+* LOLCODE
+* Processing
 
 ## Installation
 
