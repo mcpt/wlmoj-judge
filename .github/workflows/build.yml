@@ -1,63 +1,63 @@
 name: build
-on: [push]
+on: [ push ]
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-    - name: Install Black and Flake8
-      run: |
-        pip install black==22.3 flake8==5.0.4 flake8-future-import flake8-logging-format flake8-import-order flake8-quotes flake8-black
-    - name: Run Flake8
-      run: |
-        black --version
-        flake8 --version
-        flake8
-    - name: Install clang-format 12
-      run: |
-        wget -O clang-format https://github.com/DMOJ/clang-tools-static-binaries/releases/download/master-5ea3d18c/clang-format-12_linux-amd64
-        chmod a+x ./clang-format
-    - name: Run clang-format
-      run: find dmoj/ \( -name '*.h' -or -name '*.cpp' -or -name '*.c' \) -not -name _cptbox.cpp -print0 | xargs -0 ./clang-format --dry-run -Werror --color
+      - uses: actions/checkout@v3
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install Black and Flake8
+        run: |
+          pip install black==22.3 flake8==5.0.4 flake8-future-import flake8-logging-format flake8-import-order flake8-quotes flake8-black
+      - name: Run Flake8
+        run: |
+          black --version
+          flake8 --version
+          flake8
+      - name: Install clang-format 12
+        run: |
+          wget -O clang-format https://github.com/DMOJ/clang-tools-static-binaries/releases/download/master-5ea3d18c/clang-format-12_linux-amd64
+          chmod a+x ./clang-format
+      - name: Run clang-format
+        run: find dmoj/ \( -name '*.h' -or -name '*.cpp' -or -name '*.c' \) -not -name _cptbox.cpp -print0 | xargs -0 ./clang-format --dry-run -Werror --color
   mypy:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-    - name: Install dependencies and mypy
-      run: |
-        pip install cython mypy types-termcolor types-requests types-PyYAML
-        pip install -r requirements.txt
-    - name: Verify mypy types
-      run: |
-        mypy --version
-        mypy dmoj
+      - uses: actions/checkout@v3
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install dependencies and mypy
+        run: |
+          pip install cython mypy types-termcolor types-requests types-PyYAML
+          pip install -r requirements.txt
+      - name: Verify mypy types
+        run: |
+          mypy --version
+          mypy dmoj
   test-sdist:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-    - name: Install build dependencies
-      run: pip install cython
-    - name: Create sdist
-      run: python setup.py sdist
-    - name: Install test dependencies
-      run: sudo apt-get install -y libseccomp-dev
-    - name: Test sdist
-      run: |
-        pip install dist/*.tar.gz
-        dmoj-autoconf
+      - uses: actions/checkout@v3
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install build dependencies
+        run: pip install cython
+      - name: Create sdist
+        run: python setup.py sdist
+      - name: Install test dependencies
+        run: sudo apt-get install -y libseccomp-dev
+      - name: Test sdist
+        run: |
+          pip install dist/*.tar.gz
+          dmoj-autoconf
   amd64:
     runs-on: ubuntu-latest
     strategy:
@@ -115,7 +115,7 @@ jobs:
       - name: Prepare cache for storage
         run: sudo chown -R "$USER:$USER" "$HOME/docker-cache"
   arm64:
-    runs-on: [self-hosted, Linux, ARM64]
+    runs-on: [ self-hosted, Linux, ARM64 ]
     strategy:
       matrix:
         python-version: [ '3.11' ]
@@ -166,31 +166,31 @@ jobs:
         uses: codecov/codecov-action@v1
 
     # build the docker image the tests pass
-    build:
-      permissions:
-        packages: write
-      depends-on: [lint, mypy, test-sdist, amd64, arm64]
-      runs-on: ubuntu-latest
-      steps:
-        - uses: actions/checkout@v4
+  build:
+    permissions:
+      packages: write
+    depends-on: [ lint, mypy, test-sdist, amd64, arm64 ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-        - name: Set up Docker Buildx
-          uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-        - name: Login to GitHub Container Registry
-          uses: docker/login-action@v3
-          with:
-            registry: ghcr.io
-            username: ${{ github.actor }}
-            password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-        - name: Build and push
-          uses: docker/build-push-action@v6
-          with:
-            context: .
-            file: .docker/wlmoj/Dockerfile
-            push: true
-            tags: "ghcr.io/mcpt/wlmoj-judge:latest"
-            cache-from: type=gha
-            cache-to: type=gha,mode=max
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .docker/wlmoj/Dockerfile
+          push: true
+          tags: "ghcr.io/mcpt/wlmoj-judge:latest"
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
