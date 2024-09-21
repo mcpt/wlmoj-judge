@@ -164,3 +164,33 @@ jobs:
             --entrypoint=/usr/bin/tini --cap-add=SYS_PTRACE dmoj/runtimes-tier3 /source/run
       - name: Upload coverage data
         uses: codecov/codecov-action@v1
+
+    # build the docker image the tests pass
+    build:
+      permissions:
+        packages: write
+      depends-on: [lint, mypy, test-sdist, amd64, arm64]
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+
+        - name: Set up Docker Buildx
+          uses: docker/setup-buildx-action@v3
+
+        - name: Login to GitHub Container Registry
+          uses: docker/login-action@v3
+          with:
+            registry: ghcr.io
+            username: ${{ github.actor }}
+            password: ${{ secrets.GITHUB_TOKEN }}
+
+        - name: Build and push
+          uses: docker/build-push-action@v6
+          with:
+            context: .
+            file: .docker/wlmoj/Dockerfile
+            push: true
+            tags: "ghcr.io/mcpt/wlmoj-judge:latest"
+            cache-from: type=gha
+            cache-to: type=gha,mode=max
+
