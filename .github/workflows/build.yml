@@ -169,7 +169,7 @@ jobs:
   build:
     permissions:
       packages: write
-    depends-on: [ lint, mypy, test-sdist, amd64, arm64 ]
+    needs: [ lint, mypy, test-sdist, amd64, arm64 ]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
