@@ -24,6 +24,6 @@ RUN cd /tmp/ && git clone https://github.com/justinmeza/lci && \
     runuser -u judge -w PATH -- /env/bin/dmoj-autoconf -V > /judge-runtime-paths.yml && \
     echo '  crt_x86_in_lib32: true' >> /judge-runtime-paths.yml
 
-COPY config.yml /config.yml
+COPY .docker/wlmoj/config.yml /config.yml
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/judge/.docker/entry"]
