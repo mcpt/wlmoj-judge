@@ -1,6 +1,7 @@
 import itertools
 import os
 import re
+import shutil
 import subprocess
 import zipfile
 from collections import defaultdict
@@ -8,7 +9,6 @@ from functools import partial
 from typing import (
     DefaultDict,
     Dict,
-    IO,
     Iterable,
     Iterator,
     List,
@@ -30,9 +30,11 @@ from yaml.scanner import ScannerError
 from dmoj import checkers
 from dmoj.checkers import Checker
 from dmoj.config import ConfigNode, InvalidInitException
+from dmoj.cptbox.utils import MemoryIO, MmapableIO
 from dmoj.judgeenv import env, get_problem_root
 from dmoj.utils.helper_files import compile_with_auxiliary_files, parse_helper_file_error
 from dmoj.utils.module import load_module_from_file
+from dmoj.utils.normalize import normalized_file_copy
 
 if TYPE_CHECKING:
     from dmoj.graders.base import BaseGrader
@@ -264,17 +266,28 @@ class ProblemDataManager(dict):
         self.problem_root_dir = problem_root_dir
         self.archive = None
 
-    def __missing__(self, key: str) -> bytes:
-        f: IO[bytes]
+    def open(self, key: str):
         try:
-            with open(os.path.join(self.problem_root_dir, key), 'rb') as f:
-                return f.read()
+            return open(os.path.join(self.problem_root_dir, key), 'rb')
         except IOError:
             if self.archive:
                 zipinfo = self.archive.getinfo(key)
-                with self.archive.open(zipinfo) as f:
-                    return f.read()
+                return self.archive.open(zipinfo)
             raise KeyError('file "%s" could not be found in "%s"' % (key, self.problem_root_dir))
+
+    def as_fd(self, key: str, normalize: bool = False) -> MmapableIO:
+        memory = MemoryIO()
+        with self.open(key) as f:
+            if normalize:
+                normalized_file_copy(f, memory)
+            else:
+                shutil.copyfileobj(f, memory)
+        memory.seal()
+        return memory
+
+    def __missing__(self, key: str) -> bytes:
+        with self.open(key) as f:
+            return f.read()
 
     def __del__(self):
         if self.archive:
@@ -331,7 +344,8 @@ class TestCase(BaseTestCase):
     batch: int
     output_prefix_length: int
     has_binary_data: bool
-    _generated: Optional[Tuple[bytes, bytes]]
+    _input_data_io: Optional[MmapableIO]
+    _generated: Optional[Tuple[MmapableIO, bytes]]
 
     def __init__(self, count: int, batch_no: int, config: ConfigNode, problem: Problem):
         self.position = count
@@ -342,6 +356,7 @@ class TestCase(BaseTestCase):
         self.output_prefix_length = config.output_prefix_length
         self.has_binary_data = config.binary_data
         self._generated = None
+        self._input_data_io = None
 
     def _normalize(self, data: bytes) -> bytes:
         # Perhaps the correct answer may be 'no output', in which case it'll be
@@ -410,6 +425,10 @@ class TestCase(BaseTestCase):
         assert args is not None
         args = map(str, args)
 
+        input_io = MemoryIO()
+        # Enable generators to write any size files.
+        executor.fsize = -1
+
         # setting large buffers is really important, because otherwise stderr is unbuffered
         # and the generator begins calling into cptbox Python code really frequently
         proc = executor.launch(
@@ -417,7 +436,7 @@ class TestCase(BaseTestCase):
             time=time_limit,
             memory=memory_limit,
             stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
+            stdout=input_io,
             stderr=subprocess.PIPE,
             stderr_buffer_size=65536,
             stdout_buffer_size=65536,
@@ -428,12 +447,23 @@ class TestCase(BaseTestCase):
         except KeyError:
             input = None
 
-        stdout, stderr = proc.unsafe_communicate(input)
-        self._generated = self._normalize(stdout), self._normalize(stderr)
+        _, stderr = proc.unsafe_communicate(input)
+        input_io.seal()
+        self._generated = input_io, self._normalize(stderr)
 
         parse_helper_file_error(proc, executor, 'generator', stderr, time_limit, memory_limit)
 
     def input_data(self) -> bytes:
+        return self.input_data_io().to_bytes()
+
+    def input_data_io(self) -> MmapableIO:
+        if self._input_data_io:
+            return self._input_data_io
+
+        result = self._input_data_io = self._make_input_data_io()
+        return result
+
+    def _make_input_data_io(self) -> MmapableIO:
         gen = self.config.generator
 
         # don't try running the generator if we specify an output file explicitly,
@@ -444,8 +474,12 @@ class TestCase(BaseTestCase):
             assert self._generated is not None
             if self._generated[0]:
                 return self._generated[0]
+
         # in file is optional
-        return self._normalize(self.problem.problem_data[self.config['in']]) if self.config['in'] else b''
+        if self.config['in']:
+            return self.problem.problem_data.as_fd(self.config['in'], normalize=not self.has_binary_data)
+        else:
+            return MemoryIO(seal=True)
 
     def output_data(self) -> bytes:
         if self.config.out:
@@ -482,13 +516,15 @@ class TestCase(BaseTestCase):
 
     def free_data(self) -> None:
         self._generated = None
+        if self._input_data_io:
+            self._input_data_io.close()
 
     def __str__(self) -> str:
         return f'TestCase(in={self.config["in"]},out={self.config["out"]},points={self.config["points"]})'
 
     # FIXME(tbrindus): this is a hack working around the fact we can't pickle these fields, but we do need parts of
     # TestCase itself on the other end of the IPC.
-    _pickle_blacklist = ('_generated', 'config', 'problem')
+    _pickle_blacklist = ('_generated', 'config', 'problem', '_input_data_io')
 
     def __getstate__(self) -> dict:
         k = {k: v for k, v in self.__dict__.items() if k not in self._pickle_blacklist}

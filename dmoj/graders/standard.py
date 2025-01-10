@@ -3,6 +3,7 @@ import subprocess
 
 from dmoj.checkers import CheckerOutput
 from dmoj.cptbox import TracedPopen
+from dmoj.cptbox.lazy_bytes import LazyBytes
 from dmoj.error import OutputLimitExceeded
 from dmoj.executors import executors
 from dmoj.executors.base_executor import BaseExecutor
@@ -17,11 +18,11 @@ class StandardGrader(BaseGrader):
     def grade(self, case: TestCase) -> Result:
         result = Result(case)
 
-        input = case.input_data()  # cache generator data
+        input_file = case.input_data_io()
 
-        self._launch_process(case)
+        self._launch_process(case, input_file)
 
-        error = self._interact_with_process(case, result, input)
+        error = self._interact_with_process(case, result)
 
         process = self._current_proc
 
@@ -60,7 +61,7 @@ class StandardGrader(BaseGrader):
                     result.proc_output,
                     case.output_data(),
                     submission_source=self.source,
-                    judge_input=case.input_data(),
+                    judge_input=LazyBytes(case.input_data),
                     point_value=case.points,
                     case_position=case.position,
                     batch=case.batch,
@@ -68,6 +69,7 @@ class StandardGrader(BaseGrader):
                     binary_data=case.has_binary_data,
                     execution_time=result.execution_time,
                     problem_id=self.problem.id,
+                    case=case,
                     result=result,
                 )
             except UnicodeDecodeError:
@@ -80,23 +82,23 @@ class StandardGrader(BaseGrader):
 
         return check
 
-    def _launch_process(self, case: TestCase) -> None:
+    def _launch_process(self, case: TestCase, input_file=None) -> None:
         self._current_proc = self.binary.launch(
             time=self.problem.time_limit,
             memory=self.problem.memory_limit,
             symlinks=case.config.symlinks,
-            stdin=subprocess.PIPE,
+            stdin=input_file or subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             wall_time=case.config.wall_time_factor * self.problem.time_limit,
         )
 
-    def _interact_with_process(self, case: TestCase, result: Result, input: bytes) -> bytes:
+    def _interact_with_process(self, case: TestCase, result: Result) -> bytes:
         process = self._current_proc
         assert process is not None
         try:
             result.proc_output, error = process.communicate(
-                input, outlimit=case.config.output_limit_length, errlimit=1048576
+                None, outlimit=case.config.output_limit_length, errlimit=1048576
             )
         except OutputLimitExceeded:
             error = b''

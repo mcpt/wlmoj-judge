@@ -1,5 +1,6 @@
 # cython: language_level=3
 from cpython.exc cimport PyErr_NoMemory, PyErr_SetFromErrno
+from cpython.buffer cimport PyObject_GetBuffer
 from cpython.bytes cimport PyBytes_AsString, PyBytes_FromStringAndSize
 from libc.stdio cimport FILE, fopen, fclose, fgets, sprintf
 from libc.stdlib cimport malloc, free, strtoul
@@ -133,8 +134,8 @@ cdef extern from 'helper.h' nogil:
         PTBOX_SPAWN_FAIL_EXECVE
         PTBOX_SPAWN_FAIL_SETAFFINITY
 
-    int _memory_fd_create "memory_fd_create"()
-    int _memory_fd_seal "memory_fd_seal"(int fd)
+    int cptbox_memfd_create()
+    int cptbox_memfd_seal(int fd)
 
 
 cdef extern from 'fcntl.h' nogil:
@@ -214,14 +215,14 @@ def bsd_get_proc_fdno(pid_t pid, int fd):
     free(buf)
     return res
 
-def memory_fd_create():
-    cdef int fd = _memory_fd_create()
+def memfd_create():
+    cdef int fd = cptbox_memfd_create()
     if fd < 0:
         PyErr_SetFromErrno(OSError)
     return fd
 
-def memory_fd_seal(int fd):
-    cdef int result = _memory_fd_seal(fd)
+def memfd_seal(int fd):
+    cdef int result = cptbox_memfd_seal(fd)
     if result == -1:
         PyErr_SetFromErrno(OSError)
 
@@ -600,3 +601,11 @@ cdef class Process:
         if not self._exited:
             return None
         return self._exitcode
+
+
+cdef class BufferProxy:
+    def _get_real_buffer(self):
+        raise NotImplementedError
+
+    def __getbuffer__(self, Py_buffer *buffer, int flags):
+        PyObject_GetBuffer(self._get_real_buffer(), buffer, flags)
