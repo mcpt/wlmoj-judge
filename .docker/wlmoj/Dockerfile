@@ -2,6 +2,9 @@ FROM dmoj/runtimes-tier3
 
 LABEL org.opencontainers.image.source="https://github.com/mcpt/wlmoj-judge"
 
+RUN rm -f /etc/apt/sources.list.d/mono-official-stable.list \
+          /etc/apt/sources.list.d/nodesource.list
+
 # Keep in a seperate RUN command as this should always have a cache hit while the rest of the image may not
 RUN apt-get update && \
     apt-get -y --no-install-recommends install make cmake git gcc-multilib git && \
