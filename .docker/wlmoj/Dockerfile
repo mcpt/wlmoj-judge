@@ -7,7 +7,7 @@ RUN rm -f /etc/apt/sources.list.d/mono-official-stable.list \
 
 # Keep in a seperate RUN command as this should always have a cache hit while the rest of the image may not
 RUN apt-get update && \
-    apt-get -y --no-install-recommends install make cmake git gcc-multilib git && \
+    apt-get -y --no-install-recommends install make cmake git gcc-multilib git libreadline-dev && \
     rm -rf /var/lib/apt/lists/*
 
 RUN cd /tmp/ && git clone https://github.com/justinmeza/lci && \
