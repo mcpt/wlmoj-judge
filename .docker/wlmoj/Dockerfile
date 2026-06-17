@@ -12,7 +12,7 @@ RUN apt-get update && \
 
 RUN cd /tmp/ && git clone https://github.com/justinmeza/lci && \
     cd lci && \
-    cmake . && \
+    cmake . -DCMAKE_POLICY_VERSION_MINIMUM=3.5 && \
     make && \
     make install && \
     rm -rf /tmp/lci/ && \
