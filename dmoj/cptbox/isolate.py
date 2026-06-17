@@ -198,6 +198,7 @@ class IsolateTracer(dict):
                     sys_thr_exit: ALLOW,
                     sys_thr_kill: ALLOW,
                     sys_thr_self: ALLOW,
+                    sys_thr_wake: ALLOW,
                     sys_sigsuspend: ALLOW,
                     sys_clock_getcpuclockid2: ALLOW,
                     sys_fstatfs: ALLOW,
@@ -406,6 +407,8 @@ class IsolateTracer(dict):
         PR_GET_NAME = 16
         PR_CAPBSET_READ = 23
         PR_SET_THP_DISABLE = 41
+        PR_SVE_SET_VL = 50
+        PR_SVE_GET_VL = 51
         PR_SET_VMA = 0x53564D41  # Used on Android
         if debugger.arg0 not in (
             PR_GET_DUMPABLE,
@@ -414,6 +417,8 @@ class IsolateTracer(dict):
             PR_CAPBSET_READ,
             PR_SET_THP_DISABLE,
             PR_SET_VMA,
+            PR_SVE_SET_VL,
+            PR_SVE_GET_VL,
         ):
             raise DeniedSyscall(protection_fault, f'Non-whitelisted prctl option: {debugger.arg0}')
 
@@ -441,7 +446,7 @@ def wrap_access_check(syscall: int, check: AccessChecker) -> HandlerCallback:
     return inner
 
 
-def protection_fault(self, debugger: Debugger) -> bool:
+def protection_fault(debugger: Debugger) -> bool:
     return False
 
 
